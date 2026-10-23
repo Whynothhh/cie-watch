@@ -1,0 +1,60 @@
+name: 西农信工通知监控
+
+# 每 10 分钟检查一次。GitHub 的定时任务不保证准点，实际延迟通常 5~20 分钟。
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+    # 每周一 03:00(UTC) 顺便保活，防止 60 天没活动被 GitHub 自动停用
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "只发一条测试消息，不检查新通知"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 巡检
+        env:
+          # 微信推送（PushPlus），没填就跳过
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          # 邮件推送，没填就跳过
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          TEST_PUSH: ${{ inputs.test }}
+        run: python watch.py
+
+      - name: 提交已读记录
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "${{ github.event.schedule }}" = "0 3 * * 1" ]; then
+            date -u +%F >> .keepalive
+            git add .keepalive
+          fi
+          git add state.json
+          if git diff --staged --quiet; then
+            echo "状态无变化"
+          else
+            git commit -m "chore: 更新已读记录"
+            git push
+          fi
