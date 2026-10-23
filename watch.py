@@ -1,25 +1,25 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""西农信工·通知公告 云端巡检（GitHub Actions 用，只用标准库）
+"""西农多个站点 通知公告 云端巡检（GitHub Actions 用，只用标准库）
+
+监控三个栏目：
+  信工学院  https://cie.nwsuaf.edu.cn/dtytz/tzgg/index.htm
+  水建学院  https://sjxy.nwsuaf.edu.cn/tzggB/index.htm
+  教务处    https://jiaowu.nwsuaf.edu.cn/tzggB/index.htm
 
 每次运行：
-  1. 抓取列表页，解析出全部条目
-  2. 和 state.json 里记录的链接比对，找出新条目
-  3. 逐条抓正文，把标题、正文、附件链接一起发出去
-  4. 更新 state.json（工作流负责提交回仓库）
+  1. 逐页抓列表，和 state.json 里记录比对，找出新条目
+  2. 逐条抓正文，把标题、正文、附件链接一起发出去
+  3. 更新 state.json（工作流负责提交回仓库）
 
 环境变量：
-  SMTP_HOST   默认 smtp.qq.com
-  SMTP_PORT   默认 465（SSL）
-  SMTP_USER   发件邮箱
-  SMTP_PASS   邮箱授权码
-  MAIL_TO     收件邮箱，默认同 SMTP_USER
+  SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS / MAIL_TO
   PUSHPLUS_TOKEN  可选的第二通道
-  TEST_PUSH   设为 true 只发一条测试消息
+  TEST_PUSH       设为 true 只发一条测试消息
 
 用法：
   python watch.py              正常巡检
-  python watch.py --seed       只把当前所有条目记为已读
+  python watch.py --seed       把所有页面当前条目记为已读，不推送
   python watch.py --dry-run    抓取并打印，不推送、不写 state
 """
 
@@ -40,14 +40,31 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 STATE_PATH = HERE / "state.json"
 
-PAGE_URL = os.environ.get("PAGE_URL", "https://cie.nwsuaf.edu.cn/dtytz/tzgg/index.htm")
-PAGE_BASE = os.environ.get("PAGE_BASE", "https://cie.nwsuaf.edu.cn/dtytz/tzgg/")
-PAGE_NAME = os.environ.get("PAGE_NAME", "通知公告")
+# 每个站点的正文容器标记各不相同，marker 是正文 div 的特征串
+PAGES = [
+    {
+        "name": "信工",
+        "url": "https://cie.nwsuaf.edu.cn/dtytz/tzgg/index.htm",
+        "base": "https://cie.nwsuaf.edu.cn/dtytz/tzgg/",
+        "marker": 'id="articleDiv"',
+    },
+    {
+        "name": "水建",
+        "url": "https://sjxy.nwsuaf.edu.cn/tzggB/index.htm",
+        "base": "https://sjxy.nwsuaf.edu.cn/tzggB/",
+        "marker": 'class="cont"',
+    },
+    {
+        "name": "教务",
+        "url": "https://jiaowu.nwsuaf.edu.cn/tzggB/index.htm",
+        "base": "https://jiaowu.nwsuaf.edu.cn/tzggB/",
+        "marker": 'class="article2"',
+    },
+]
 
-# 每封邮件里每条通知正文最多保留多少字，超了截断（完整内容有原文链接）
-MAX_BODY = 1500
-# 一封邮件最多几条
-MAX_ITEMS = 8
+MAX_BODY = 1200      # 每条正文最多保留多少字
+MAX_ITEMS = 6        # 一封邮件最多几条
+MAX_NEW_PER_PAGE = 10  # 单页一轮新增超过这个数，视为改版，跳过
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -55,7 +72,7 @@ UA = (
 )
 
 ITEM_RE = re.compile(
-    r"<li[^>]*>\s*<span[^>]*>\s*\[(\d{4}-\d{2}-\d{2})\]\s*</span>\s*"
+    r"<li[^>]*>\s*<span[^>]*>\s*[\[(（]\s*(\d{4}-\d{2}-\d{2})\s*[\])）]\s*</span>\s*"
     r"<a\s+([^>]*)>\s*(.*?)\s*</a>",
     re.S | re.I,
 )
@@ -64,6 +81,8 @@ TITLE_ATTR_RE = re.compile(r'title\s*=\s*"([^"]*)"', re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 DIV_TAG_RE = re.compile(r"<div\b|</div>", re.I)
 ATTACH_RE = re.compile(r'<a\b([^>]*\bdesc="textLink"[^>]*)>(.*?)</a>', re.S | re.I)
+ANCHOR_RE = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.S | re.I)
+FILE_EXT_RE = re.compile(r"\.(docx?|xlsx?|pptx?|pdf|zip|rar|7z|txt)(\?|$)", re.I)
 
 
 def now_cn():
@@ -122,9 +141,9 @@ def parse_items(text, base):
 
 # ---------------------------------------------------------------- 正文抽取
 
-def slice_article(page):
-    """截出 <div id="articleDiv"> ... 对应的整段（含嵌套 div）。"""
-    i = page.find('id="articleDiv"')
+def slice_container(page, marker):
+    """截出含 marker 的那个 div 的整段（照顾嵌套 div）。"""
+    i = page.find(marker)
     if i < 0:
         return ""
     start = page.rfind("<div", 0, i)
@@ -139,6 +158,21 @@ def slice_article(page):
             if depth == 0:
                 return page[start:m.end()]
     return page[start:]
+
+
+def images_to_links(frag, base):
+    def rep(m):
+        sm = re.search(r'src\s*=\s*"([^"]+)"', m.group(0), re.I)
+        if not sm:
+            return ""
+        u = html.unescape(sm.group(1).strip())
+        u = u if u.lower().startswith("http") else urllib.parse.urljoin(base, u)
+        # 模板自带的图标/装饰图没有意义，丢掉
+        low = u.lower()
+        if "attach.gif" in low or "/pub/" in low or "/g_style/" in low:
+            return ""
+        return "\n[图片] %s\n" % u
+    return re.sub(r"<img\b[^>]*>", rep, frag, flags=re.I)
 
 
 def html_to_text(frag):
@@ -167,44 +201,52 @@ def html_to_text(frag):
 
 def parse_attachments(frag, base):
     files, seen = [], set()
+
+    def add(href, name):
+        if not href:
+            return
+        url = href if href.lower().startswith("http") else urllib.parse.urljoin(base, href)
+        url = url.split("#")[0]
+        if url in seen:
+            return
+        seen.add(url)
+        files.append((name or url.rsplit("/", 1)[-1], url))
+
+    # 1) 教育 CMS 的标准附件锚点
     for m in ATTACH_RE.finditer(frag):
-        attrs, inner = m.group(1), m.group(2)
-        hm = HREF_RE.search(attrs)
+        hm = HREF_RE.search(m.group(1))
+        if hm:
+            add(html.unescape(hm.group(1).strip()),
+                html.unescape(TAG_RE.sub("", m.group(2))).strip())
+
+    # 2) 指向文档的普通链接（有些站点不用标准锚点）
+    for m in ANCHOR_RE.finditer(frag):
+        hm = HREF_RE.search(m.group(1))
         if not hm:
             continue
         href = html.unescape(hm.group(1).strip())
-        if not href:
+        if not FILE_EXT_RE.search(href):
             continue
-        url = href if href.lower().startswith("http") else urllib.parse.urljoin(base, href)
-        if url in seen:
-            continue
-        seen.add(url)
-        name = html.unescape(TAG_RE.sub("", inner)).strip() or url.rsplit("/", 1)[-1]
-        files.append((name, url))
+        add(href, html.unescape(TAG_RE.sub("", m.group(2))).strip())
+
     return files
 
 
-def images_to_links(frag, base):
-    """把正文里的图片换成可点的链接（邮件里不显示图，至少别丢）。"""
-    def rep(m):
-        sm = re.search(r'src\s*=\s*"([^"]+)"', m.group(0), re.I)
-        if not sm:
-            return ""
-        u = html.unescape(sm.group(1).strip())
-        u = u if u.lower().startswith("http") else urllib.parse.urljoin(base, u)
-        return "\n[图片] %s\n" % u
-    return re.sub(r"<img\b[^>]*>", rep, frag, flags=re.I)
-
-
-def enrich(item):
-    """抓正文，失败就留空（退回只发标题+链接）。"""
+def enrich(item, marker):
     try:
         page = http_get(item["url"])
     except Exception:  # noqa: BLE001
         return item
-    frag = slice_article(page)
+
+    frag = slice_container(page, marker)
+    if not frag:
+        return item
+
+    # 有的模板把标题和"作者/来源/发布日期"也放在同一个容器里
+    frag = re.sub(r'(?is)<h[1-3][^>]*class="t"[^>]*>.*?</h[1-3]>', "", frag)
+    frag = re.sub(r'(?is)<div[^>]*class="info"[^>]*>.*?</div>', "", frag)
+
     item["files"] = parse_attachments(frag, item["url"])
-    # 附件已经在「附件」段单独列出，正文里去掉，免得重复
     body_frag = ATTACH_RE.sub("", frag)
     body_frag = images_to_links(body_frag, item["url"])
     item["body"] = html_to_text(body_frag)
@@ -214,17 +256,27 @@ def enrich(item):
 # ---------------------------------------------------------------- 组稿
 
 def build_text(items):
-    lines = ["【西农信工·%s】%d 条新通知" % (PAGE_NAME, len(items)), ""]
+    n = len(items)
+    names = []
+    for it in items:
+        if it["page"] not in names:
+            names.append(it["page"])
+    if len(names) == 1:
+        head = "【西农%s·通知公告】%d 条新通知" % (names[0], n)
+    else:
+        head = "【西农】%d 条新通知（%s）" % (n, "、".join(names))
+
+    lines = [head, ""]
     for i, it in enumerate(items, 1):
-        if len(items) > 1:
-            lines.append("—— %d/%d ——" % (i, len(items)))
-        lines.append("%s  %s" % (it["date"], it["title"]))
+        if n > 1:
+            lines.append("—— %d/%d ——" % (i, n))
+        lines.append("【%s】%s  %s" % (it["page"], it["date"], it["title"]))
         lines.append("")
 
         body = it.get("body", "")
         if body:
             if len(body) > MAX_BODY:
-                body = body[:MAX_BODY].rstrip() + "\n……（全文较长，剩余内容见原文）"
+                body = body[:MAX_BODY].rstrip() + "\n……（全文较长，剩余见原文）"
             lines.extend(body.splitlines())
             lines.append("")
 
@@ -237,19 +289,21 @@ def build_text(items):
             lines.append("")
 
         lines.append("原文：" + it["url"])
-        if i < len(items):
-            lines.append("")
-            lines.append("")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def build_subject(items):
     if len(items) == 1:
         t = items[0]["title"]
-        if len(t) > 40:
-            t = t[:40] + "…"
-        return "西农信工：" + t
-    return "西农信工 %d 条新通知" % len(items)
+        if len(t) > 42:
+            t = t[:42] + "…"
+        return "西农：%s" % t
+    names = []
+    for it in items:
+        if it["page"] not in names:
+            names.append(it["page"])
+    return "西农 %d 条新通知（%s）" % (len(items), "·".join(names))
 
 
 # ---------------------------------------------------------------- 推送
@@ -311,14 +365,21 @@ def push_all(text, subject):
     return any(results)
 
 
-# ---------------------------------------------------------------- 主流程
+# ---------------------------------------------------------------- 状态
 
 def load_state():
     try:
         with open(STATE_PATH, "r", encoding="utf-8-sig") as f:
-            return json.load(f)
+            s = json.load(f)
     except FileNotFoundError:
-        return {"seen": {}, "last_run": None}
+        return {"pages": {}, "last_run": None}
+
+    # 旧版单页格式迁移到多页格式
+    if "seen" in s and "pages" not in s:
+        s = {"pages": {PAGES[0]["name"]: {"initialized": True, "seen": s["seen"]}},
+             "last_run": s.get("last_run")}
+    s.setdefault("pages", {})
+    return s
 
 
 def save_state(state):
@@ -327,6 +388,8 @@ def save_state(state):
         f.write("\n")
 
 
+# ---------------------------------------------------------------- 主流程
+
 def main():
     args = sys.argv[1:]
     seed = "--seed" in args
@@ -334,61 +397,69 @@ def main():
 
     if os.environ.get("TEST_PUSH", "").strip().lower() in ("1", "true", "yes"):
         text = (
-            "【西农信工·通知公告】测试消息 ✅\n\n"
-            "推送通道已经接通。\n"
-            "以后学院官网发新通知，会以「标题 + 正文 + 附件 + 原文链接」的格式发到这里。"
+            "【西农·通知公告】测试消息 ✅\n\n"
+            "现在监控三个栏目：信工学院、水建学院、教务处。\n"
+            "有新通知时，会以「标题 + 正文 + 附件 + 原文链接」的格式发到这里。"
         )
-        ok = push_all(text, "西农信工：测试消息")
+        ok = push_all(text, "西农：测试消息")
         print(text)
         print("测试推送:", "成功" if ok else "失败（没配任何通道？）")
         return 0 if ok else 1
 
     state = load_state()
-    seen = state.setdefault("seen", {})
+    pages_state = state["pages"]
+    fresh_all = []
 
-    try:
-        page = http_get(PAGE_URL)
-    except Exception as e:  # noqa: BLE001
-        print("抓取失败: %r" % e, file=sys.stderr)
-        return 1
+    for page in PAGES:
+        name = page["name"]
+        ps = pages_state.setdefault(name, {"initialized": False, "seen": {}})
+        try:
+            text = http_get(page["url"])
+        except Exception as e:  # noqa: BLE001
+            print("[%s] 抓取失败: %r" % (name, e), file=sys.stderr)
+            continue
 
-    items = parse_items(page, PAGE_BASE)
-    if not items:
-        print("解析到 0 条，页面结构可能变了，本轮跳过", file=sys.stderr)
-        return 1
+        items = parse_items(text, page["base"])
+        if not items:
+            print("[%s] 解析到 0 条，跳过（页面结构可能变了）" % name, file=sys.stderr)
+            continue
 
-    fresh = [it for it in items if it["url"] not in seen]
-    print("共 %d 条，已读 %d 条，新增 %d 条" % (len(items), len(seen), len(fresh)))
+        seen = ps["seen"]
+        fresh = [it for it in items if it["url"] not in seen]
 
-    if seed or not seen:
-        for it in items:
-            seen[it["url"]] = it["date"]
-        state["last_run"] = now_cn()
-        if not dry:
-            save_state(state)
-        print("已初始化：记录 %d 条为已读" % len(items))
-        return 0
+        if seed or not ps["initialized"]:
+            for it in items:
+                seen[it["url"]] = it["date"]
+            ps["initialized"] = True
+            print("[%s] 初始化：%d 条记为已读" % (name, len(items)))
+            continue
 
-    if not fresh:
-        state["last_run"] = now_cn()
+        if len(fresh) > MAX_NEW_PER_PAGE:
+            print("[%s] 新增 %d 条，超过阈值，疑似改版，本轮跳过" % (name, len(fresh)))
+            continue
+
+        for it in fresh:
+            it["page"] = name
+            fresh_all.append(it)
+        print("[%s] 共 %d 条，新增 %d 条" % (name, len(items), len(fresh)))
+
+    state["last_run"] = now_cn()
+
+    if not fresh_all:
         if not dry:
             save_state(state)
         print("没有新通知")
         return 0
 
-    if len(fresh) > 10:
-        print("新增过多（%d 条），疑似改版，本轮不推送" % len(fresh))
-        for it in fresh[:5]:
-            print("  ", it["date"], it["title"])
-        return 0
+    for it in fresh_all:
+        page = next(p for p in PAGES if p["name"] == it["page"])
+        enrich(it, page["marker"])
+        print("  [%s] 正文 %d 字 / 附件 %d 个：%s"
+              % (it["page"], len(it.get("body", "")), len(it.get("files") or []), it["title"]))
 
-    for it in fresh:
-        enrich(it)
-        print("  抓到正文 %d 字，附件 %d 个：%s"
-              % (len(it.get("body", "")), len(it.get("files") or []), it["title"]))
-
-    text = build_text(fresh)
-    subject = build_subject(fresh)
+    batch = fresh_all[:MAX_ITEMS]
+    text = build_text(batch)
+    subject = build_subject(batch)
     print("---- 邮件预览 ----")
     print("主题：" + subject)
     print(text)
@@ -398,11 +469,10 @@ def main():
         return 0
 
     if push_all(text, subject):
-        for it in fresh:
-            seen[it["url"]] = it["date"]
-        state["last_run"] = now_cn()
+        for it in batch:
+            pages_state[it["page"]]["seen"][it["url"]] = it["date"]
         save_state(state)
-        print("推送成功，已记录 %d 条" % len(fresh))
+        print("推送成功，已记录 %d 条" % len(batch))
         return 0
 
     print("推送失败，state 未更新，下一轮会重试", file=sys.stderr)
