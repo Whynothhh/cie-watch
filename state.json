@@ -33,7 +33,9 @@
     "https://cie.nwsuaf.edu.cn/dtytz/tzgg/1598ffc13faa4835b6452b31e8afe9d8.htm": "2026-11-02",
     "https://cie.nwsuaf.edu.cn/dtytz/tzgg/fbd22dbef9334f308c39618267c75dcd.htm": "2026-11-09",
     "https://cie.nwsuaf.edu.cn/dtytz/tzgg/ed94d60988a44c3cbd29d006b9ec5bb7.htm": "2026-11-09",
-    "https://cie.nwsuaf.edu.cn/dtytz/tzgg/4832edc77a214b119fe0d694e53b0a8e.htm": "2026-11-09"
+    "https://cie.nwsuaf.edu.cn/dtytz/tzgg/4832edc77a214b119fe0d694e53b0a8e.htm": "2026-11-09",
+    "https://cie.nwafu.edu.cn/dqgz/djgz/rdzn/90fe2b24bd9a4b4e84a99e9e32e4bd32.htm": "2026-11-11",
+    "https://cie.nwafu.edu.cn/dqgz/djgz/rdzn/d80777c766ff4382bb8e987dd3a0dbb1.htm": "2026-11-11"
    }
   },
   "水建": {
@@ -70,7 +72,8 @@
     "https://sjxy.nwsuaf.edu.cn/tzggB/3d8959af41e140b58c8ff639fd0c1c9b.htm": "2026-11-06",
     "https://sjxy.nwsuaf.edu.cn/tzggB/fdcdedb6ee6b424c9b5fd7343d03f6aa.htm": "2026-11-06",
     "https://sjxy.nwsuaf.edu.cn/tzggB/15e2dc9ec89f4c0589faa45442ab964e.htm": "2026-11-10",
-    "https://sjxy.nwsuaf.edu.cn/tzggB/2c9ead67965b41cc910bb58a7d84c4cc.htm": "2026-11-09"
+    "https://sjxy.nwsuaf.edu.cn/tzggB/2c9ead67965b41cc910bb58a7d84c4cc.htm": "2026-11-09",
+    "https://sjxy.nwsuaf.edu.cn/tzggB/e5af3efb9c964c499cfd7e6d9d5182b2.htm": "2026-11-11"
    }
   },
   "教务": {
@@ -110,5 +113,5 @@
    }
   }
  },
- "last_run": "2026-11-11 10:48"
+ "last_run": "2026-11-11 17:54"
 }
