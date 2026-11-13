@@ -36,7 +36,8 @@
     "https://cie.nwsuaf.edu.cn/dtytz/tzgg/4832edc77a214b119fe0d694e53b0a8e.htm": "2026-11-09",
     "https://cie.nwafu.edu.cn/dqgz/djgz/rdzn/90fe2b24bd9a4b4e84a99e9e32e4bd32.htm": "2026-11-11",
     "https://cie.nwafu.edu.cn/dqgz/djgz/rdzn/d80777c766ff4382bb8e987dd3a0dbb1.htm": "2026-11-11",
-    "https://cie.nwsuaf.edu.cn/dtytz/tzgg/01c92bad480b4cdebc23f980af38af0e.htm": "2026-11-12"
+    "https://cie.nwsuaf.edu.cn/dtytz/tzgg/01c92bad480b4cdebc23f980af38af0e.htm": "2026-11-12",
+    "https://cie.nwsuaf.edu.cn/dtytz/tzgg/48c63e2519514346adc203e5209cae99.htm": "2026-11-13"
    }
   },
   "水建": {
@@ -74,7 +75,10 @@
     "https://sjxy.nwsuaf.edu.cn/tzggB/fdcdedb6ee6b424c9b5fd7343d03f6aa.htm": "2026-11-06",
     "https://sjxy.nwsuaf.edu.cn/tzggB/15e2dc9ec89f4c0589faa45442ab964e.htm": "2026-11-10",
     "https://sjxy.nwsuaf.edu.cn/tzggB/2c9ead67965b41cc910bb58a7d84c4cc.htm": "2026-11-09",
-    "https://sjxy.nwsuaf.edu.cn/tzggB/e5af3efb9c964c499cfd7e6d9d5182b2.htm": "2026-11-11"
+    "https://sjxy.nwsuaf.edu.cn/tzggB/e5af3efb9c964c499cfd7e6d9d5182b2.htm": "2026-11-11",
+    "https://sjxy.nwsuaf.edu.cn/tzggB/a06db2d71b5c44e7938cdf03b4762c9d.htm": "2026-11-13",
+    "https://sjxy.nwsuaf.edu.cn/tzggB/52b1e3e277e84add9239f827add04513.htm": "2026-11-13",
+    "https://sjxy.nwsuaf.edu.cn/tzggB/7e91b3f1cbe24802946e82493ad839b6.htm": "2026-11-13"
    }
   },
   "教务": {
@@ -112,9 +116,10 @@
     "https://jiaowu.nwsuaf.edu.cn/tzggB/b72d4628367340e2bc2b1cc8f4610f5f.htm": "2026-11-09",
     "https://jiaowu.nwsuaf.edu.cn/tzggB/d7ede58d49564f4299959b482373bb91.htm": "2026-11-10",
     "https://jiaowu.nwsuaf.edu.cn/tzggB/824e44a396084ea298243536ca188eb1.htm": "2026-11-12",
-    "https://jiaowu.nwsuaf.edu.cn/tzggB/f4d2c0d29d7142ed8a09637bba4f435b.htm": "2026-11-12"
+    "https://jiaowu.nwsuaf.edu.cn/tzggB/f4d2c0d29d7142ed8a09637bba4f435b.htm": "2026-11-12",
+    "https://jiaowu.nwsuaf.edu.cn/tzggB/cac500a89dff4d0eb2e9ba8efe39ccc8.htm": "2026-11-11"
    }
   }
  },
- "last_run": "2026-11-13 09:27"
+ "last_run": "2026-11-13 16:26"
 }
